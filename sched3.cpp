@@ -67,16 +67,20 @@ public:
   }
 };
 
-struct work_request{
-
+struct Work_request{
+	int type; // 1. Get 2. Insert 3. Update
+	uint64_t key;
+	uint64_t value;
 }
-
+struct Work_Queue{
+	std::queue<
+}
 //=========== Global Variable ==========
 //Global Work Queue
-
+std::queue<Work_request> global_WQ;
 //=========== Thread Local Variable ====
 //Local Work Queue
-
+std::queue<Work_request>* local_WQ[32];
 // ========== Coroutine Logic ==========
 utask worker(int tid, int coroid, Scheduler& sched) {
   std::cout << "[Coroutine " << coroid << "] started on thread " << tid << "\n";
@@ -90,7 +94,15 @@ utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sc
   for (int i = 0; i < coro_count; ++i) {
     sched.emplace(workers[i].get_handle());
   }
-  sched.schedule();
+  while(1){
+	pull_request();
+  	sched.schedule();
+	if(idle){
+		//post my coroutine to other thread
+		//
+		break;
+	}
+  }
   co_return;
 }
 
@@ -115,11 +127,22 @@ void thread_func(int tid, int coro_count) {
   utask master_task = master(tid, coro_count, tasks, sched);
   master_task.handle.resume();
 }
-
+void scheduler_thread(){
+  pthread_t this_thread = pthread_self();
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(tid, &cpuset);
+  int ret = pthread_setaffinity_np(this_thread, sizeof(cpu_set_t), &cpuset);
+  if (ret != 0) perror("pthread_setaffinity_np");
+  //이 스케줄러 thread는 전체 request를 삽입하고 조절하는 역할을함.
+  
+  return; 
+}
 int main() {
   const int coro_count = 3;
-  std::thread t1(thread_func, 0, coro_count);
-  std::thread t2(thread_func, 1, coro_count);
+  //for(int i=1;i<thread_count+1;i++){
+  std::thread t1(thread_func, 1, coro_count);
+  std::thread t2(thread_func, 2, coro_count);
 
   t1.join();
   t2.join();
