@@ -52,7 +52,7 @@ public:
   }
 
   void schedule() {
-    while (!_tasksQ.empty()) {
+    if (!_tasksQ.empty()) {
       auto task = _tasksQ.front();
       _tasksQ.pop();
       task.resume();
@@ -76,11 +76,16 @@ struct Work_Queue{
 	std::queue<
 }
 //=========== Global Variable ==========
-//Global Work Queue
+//Enable thread list
+constexpr int MAX_THREADS = 32;
+//coroutine Queue : 실행중인 코루틴
+std::vector<std::queue<std::coroutine_handle<>>> coroutine_queues(MAX_THREADS);
+std::mutex queue_mutexes[MAX_THREADS];
+//Global Work Queue : 실행해야하는 request
 std::queue<Work_request> global_WQ;
 //=========== Thread Local Variable ====
 //Local Work Queue
-std::queue<Work_request>* local_WQ[32];
+std::queue<Work_request>* local_WQ[MAX_THREADS];
 // ========== Coroutine Logic ==========
 utask worker(int tid, int coroid, Scheduler& sched) {
   std::cout << "[Coroutine " << coroid << "] started on thread " << tid << "\n";
@@ -97,9 +102,22 @@ utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sc
   while(1){
 	pull_request();
   	sched.schedule();
-	if(idle){
-		//post my coroutine to other thread
-		//
+	if(tid==2){
+		utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sched) {
+  std::cout << "[Master Coroutine] Start on thread " << tid << "\n";
+  for (int i = 0; i < coro_count; ++i) {
+    sched.emplace(workers[i].get_handle());
+  }
+  while(1){
+        pull_request();
+        sched.schedule();
+        if(tid==2){                                                                                                                                                 //post my coroutine to other thread                                                                                                                 post_mycorutine(1);
+                break;
+        }
+  }
+  co_return;
+}//post my coroutine to other thread
+		post_mycorutine(1);
 		break;
 	}
   }
@@ -123,7 +141,7 @@ void thread_func(int tid, int coro_count) {
     utask t = worker(tid, i, sched);
     tasks.push_back(std::move(t));
   }
-
+  
   utask master_task = master(tid, coro_count, tasks, sched);
   master_task.handle.resume();
 }
