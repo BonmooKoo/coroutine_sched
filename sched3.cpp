@@ -43,6 +43,7 @@ class Scheduler {
   std::queue<std::coroutine_handle<>> _IO_tasksQ;
 
 public:
+  int thread_id;	
   void emplace(std::coroutine_handle<> task) {
     _tasksQ.push(task);
   }
@@ -52,14 +53,14 @@ public:
   }
 
   void schedule() {
-    if (!_tasksQ.empty()) {
-      auto task = _tasksQ.front();
-      _tasksQ.pop();
+    if (!coroutine_queues[thread_id].empty()) {
+      auto task = coroutine_queues[thread_id].front();
+      coroutine_queues[thread_id].pop();
       task.resume();
 
       if (!task.done()) {
         // 예시 분기, 실제 사용 시 coroutine 내부에서 type 지정 필요
-        _tasksQ.push(task);
+        coroutine_queues[thread_id].push(task);
       } else {
         task.destroy();
       }
@@ -71,7 +72,7 @@ struct Work_request{
 	int type; // 1. Get 2. Insert 3. Update
 	uint64_t key;
 	uint64_t value;
-}
+};
 //=========== Global Variable ==========
 //Enable thread list
 constexpr int MAX_THREADS = 32;
@@ -85,9 +86,9 @@ std::queue<Work_request> global_WQ;
 std::queue<Work_request>* local_WQ[MAX_THREADS];
 // ========== Coroutine Logic ==========
 utask worker(int tid, int coroid, Scheduler& sched) {
-  std::cout << "[Coroutine " << coroid << "] started on thread " << tid << "\n";
+  printf("[Coroutine %d-%d]:started at thread%d\n",tid,coroid,gettid());
   co_await sched.suspend();
-  std::cout << "[Coroutine " << coroid << "] end on thread " << tid << "\n";
+  printf("[Coroutine %d-%d]:ended at thread%d\n",tid,coroid,gettid());
   co_return;
 }
 void post_mycoroutines_to(int from_tid, int to_tid) {
@@ -99,7 +100,7 @@ void post_mycoroutines_to(int from_tid, int to_tid) {
   }
 }
 utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sched) {
-  std::cout << "[Master Coroutine] Start on thread " << tid << "\n";
+  printf("[Master Coroutine%d] Started on thread %d\n",tid,gettid());
   for (int i = 0; i < coro_count; ++i) {
     auto handle = workers[i].get_handle();
     coroutine_queues[tid].push(handle);
@@ -107,15 +108,15 @@ utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sc
   }
   while(1){
 	  //pull_request();
-  	sched.schedule();
+      sched.schedule();
 	  if(tid==2){
       post_mycoroutines_to(tid, 1);
-      std::cout << "[Master Coroutine] Transferred coroutines from thread " << tid << " to thread 1\n";
+      printf( "[Master Coroutine2] Transferred coroutines\n");
       break;
     }
   co_return;
 }
-
+}
 // ========== Thread Function ==========
 void thread_func(int tid, int coro_count) {
   // bind thread to specific core
@@ -127,6 +128,7 @@ void thread_func(int tid, int coro_count) {
   if (ret != 0) perror("pthread_setaffinity_np");
 
   Scheduler sched;
+  sched.thread_id=tid;
   std::vector<utask> tasks;
 
   for (int i = 0; i < coro_count; ++i) {
@@ -137,7 +139,7 @@ void thread_func(int tid, int coro_count) {
   utask master_task = master(tid, coro_count, tasks, sched);
   master_task.handle.resume();
 }
-void scheduler_thread(){
+void scheduler_thread(int tid){
   pthread_t this_thread = pthread_self();
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
