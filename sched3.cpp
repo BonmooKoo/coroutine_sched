@@ -72,9 +72,6 @@ struct Work_request{
 	uint64_t key;
 	uint64_t value;
 }
-struct Work_Queue{
-	std::queue<
-}
 //=========== Global Variable ==========
 //Enable thread list
 constexpr int MAX_THREADS = 32;
@@ -93,34 +90,29 @@ utask worker(int tid, int coroid, Scheduler& sched) {
   std::cout << "[Coroutine " << coroid << "] end on thread " << tid << "\n";
   co_return;
 }
-
+void post_mycoroutines_to(int from_tid, int to_tid) {
+  std::lock_guard<std::mutex> lock_from(queue_mutexes[from_tid]);
+  std::lock_guard<std::mutex> lock_to(queue_mutexes[to_tid]);
+  while (!coroutine_queues[from_tid].empty()) {
+    coroutine_queues[to_tid].push(coroutine_queues[from_tid].front());
+    coroutine_queues[from_tid].pop();
+  }
+}
 utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sched) {
   std::cout << "[Master Coroutine] Start on thread " << tid << "\n";
   for (int i = 0; i < coro_count; ++i) {
+    auto handle = workers[i].get_handle();
+    coroutine_queues[tid].push(handle);
     sched.emplace(workers[i].get_handle());
   }
   while(1){
-	pull_request();
+	  //pull_request();
   	sched.schedule();
-	if(tid==2){
-		utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sched) {
-  std::cout << "[Master Coroutine] Start on thread " << tid << "\n";
-  for (int i = 0; i < coro_count; ++i) {
-    sched.emplace(workers[i].get_handle());
-  }
-  while(1){
-        pull_request();
-        sched.schedule();
-        if(tid==2){                                                                                                                                                 //post my coroutine to other thread                                                                                                                 post_mycorutine(1);
-                break;
-        }
-  }
-  co_return;
-}//post my coroutine to other thread
-		post_mycorutine(1);
-		break;
-	}
-  }
+	  if(tid==2){
+      post_mycoroutines_to(tid, 1);
+      std::cout << "[Master Coroutine] Transferred coroutines from thread " << tid << " to thread 1\n";
+      break;
+    }
   co_return;
 }
 
