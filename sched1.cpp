@@ -13,7 +13,7 @@
 // ========== Coroutine Task Definition ==========
 struct utask {//coroutine wrapper : 코루틴 구조체를 정의. 코루틴 상태를 제어
     struct promise_type {//코루틴 핵심 객체 : 컴파일러는 코루틴 함수를 만나면 promise_type을 생성해 사용
-        std::coroutine_handle<> continuation;//코루틴 핸들
+        std::coroutine_handle<> continuation;//코루틴 핸들 : 현재 coroutine의 재개 시점을 나타냄.
 
         utask get_return_object() {//코루틴 함수가 호출되면 from_promise를 통해
 				   //promise_type 인스턴스와 연결된 코루틴 핸들을 생성
