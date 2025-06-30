@@ -36,11 +36,11 @@ struct utask {
   auto get_handle() { return handle; }
 
 };
-
+using utask_ptr = std::shared_ptr<utask>;
 //=========== Global Variable ==========
 constexpr int MAX_THREADS = 32;
-std::vector<std::queue<utask>> coroutine_queues(MAX_THREADS); // Queue 배열 coroutine_queues[32]
-std::vector<std::queue<utask>> wait_list(MAX_THREADS); // 다른 thread에서 실행중인 coroutine을 넘겨줄때 사용 (동기화 피하기 위함.
+std::vector<std::queue<utask_ptr>> coroutine_queues(MAX_THREADS); // Queue 배열 coroutine_queues[32]
+std::vector<std::queue<utask_ptr>> wait_list(MAX_THREADS); // 다른 thread에서 실행중인 coroutine을 넘겨줄때 사용 (동기화 피하기 위함.
 std::mutex queue_mutexes[MAX_THREADS]; // wait_list 동기화에 사용되는 mutex lock
 
 // ========== Scheduler ==========
@@ -48,9 +48,9 @@ class Scheduler {
 public:
   int thread_id;
 
-  void emplace(utask&& task) {
+  void emplace(std::shared_ptr<utask> task) {
     //std::lock_guard<std::mutex> lock(queue_mutexes[thread_id]);
-    coroutine_queues[thread_id].push(std::move(task));
+    coroutine_queues[thread_id].push(task);
   }
 
   auto suspend() {
@@ -61,13 +61,13 @@ public:
     //std::lock_guard<std::mutex> lock(queue_mutexes[thread_id]);
     if (!coroutine_queues[thread_id].empty()) {
       printf("[Schedule Tid : %d]\n",thread_id);
-      utask task = std::move(coroutine_queues[thread_id].front());
+      std::shared_ptr<utask> task = coroutine_queues[thread_id].front();
       //printf("Task : %d\n",task.utask_id);
       coroutine_queues[thread_id].pop();
       auto handle = task.get_handle();
       handle.resume();
       if (!handle.done()) {
-        coroutine_queues[thread_id].push(std::move(task));
+        coroutine_queues[thread_id].push(task);
       } 
     }
     if (!wait_list[thread_id].empty()){
@@ -79,9 +79,9 @@ public:
       printf("[Wait Tid : %d]\n",thread_id);
       //wait list의 task를 내 coroutine queu로 emplace함.
       while (!wait_list[thread_id].empty()) {
-        auto task = std::move(wait_list[thread_id].front());
+        auto task = wait_list[thread_id].front();
         wait_list[thread_id].pop();
-        emplace(std::move(task)); // 현재 스레드의 스케줄러에 넣음
+        emplace(task); // 현재 스레드의 스케줄러에 넣음
       }
       printf("[Wait Tid: %d] Pull end. size : %d\n",thread_id,coroutine_queues[thread_id].size()); 
     }
@@ -162,7 +162,7 @@ void thread_func(int tid, int coro_count) {
 
   for (int i = 0; i < coro_count; ++i) {
     //여기서 생성되는 worker는 초기에 생성되는 worker
-    utask t = worker(tid, i, sched);//worker()는 코루틴 함수이기 때문에, 일반 함수와 다르게 즉시 전체 body를 실행하지않고
+    auto t = std::make_shared<utask>(worker(tid, i, sched));//worker()는 코루틴 함수이기 때문에, 일반 함수와 다르게 즉시 전체 body를 실행하지않고
 				    //promise_type 객체를 생성하고 croutine_handle 생성이 발생한다.
 				    //1. promise_type 생성
 				    //2. coroutine_handle 생성
