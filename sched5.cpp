@@ -71,7 +71,7 @@ public:
     }
 
     void emplace(utask&& task) {
-        std::lock_guard<std::mutex> lock(mutex);
+        // std::lock_guard<std::mutex> lock(mutex);
         coroutine_queue.push(std::move(task));
     }
 
@@ -113,14 +113,25 @@ struct Work_request {
     uint64_t value;
 };
 // move i
-//
+
 int post_mycoroutines_to(int from_tid, int to_tid) {
-	
+	int count=0;
+    auto& to_sched = *schedulers[to_tid];
+    auto& from_sched = *schedulers[from_tid];
+    std::lock_guard<std::mutex> lock_from(from_sched.mutex);
+    std::lock_guard<std::mutex> lock_to(to_sched.mutex);
+    while (!from_sched.coroutine_queue.empty()) {
+        count++;
+        to_sched.wait_list.push(std::move(from_sched.coroutine_queue.front()));
+        from_sched.coroutine_queue.pop();
+    }
+    return count;
 }
 // ===== Coroutine Definitions =====
 utask worker(int tid, int coroid) {
+    std::cout << "[Coroutine " << tid << "-" << coroid << "] started on thread " << gettid() << "\n";
     co_await std::suspend_always{};
-    std::cout << "[Coroutine " << tid << "-" << coroid << "] running on thread " << tid << "\n";
+    std::cout << "[Coroutine " << tid << "-" << coroid << "] running on thread " << gettid() << "\n";
     co_return;
 }
 
@@ -135,17 +146,7 @@ utask master(int tid, int coro_count, std::vector<utask>& workers) {
     }
 
     if (tid == 1) {
-        // move 모든 task to thread 0
-        auto& to_sched = *schedulers[0];
-        auto& from_sched = *schedulers[1];
-
-        std::lock_guard<std::mutex> lock_from(from_sched.mutex);
-        std::lock_guard<std::mutex> lock_to(to_sched.mutex);
-
-        while (!from_sched.coroutine_queue.empty()) {
-            to_sched.wait_list.push(std::move(from_sched.coroutine_queue.front()));
-            from_sched.coroutine_queue.pop();
-        }
+        int count = post_mycoroutines_to(1,0);
     }
 
     co_return;
@@ -163,8 +164,11 @@ void thread_func(int tid, int coro_count) {
 
     std::vector<utask> tasks;
     for (int i = 0; i < coro_count; ++i) {
-        auto task = worker(tid, i);
-        task.utask_id = tid * 100 + i;
+        int coro_id=tid*100+i;
+        auto task = worker(tid, coro_id);
+        task.thread_id=tid;
+        task.utask_id =coro_id;
+        
         tasks.push_back(std::move(task));
     }
 
