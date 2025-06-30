@@ -139,16 +139,16 @@ utask master(int tid, int coro_count, std::vector<utask>& workers) {
     auto& sched = *schedulers[tid];
     for (auto& t : workers)
         sched.emplace(std::move(t));
-
-    int count = 0;
-    while (count++ < 5) {
-        sched.schedule();//5번 sched
+    while(1){
+    	int count = 0;
+    //	while (count++ < 5) 
+        	sched.schedule();//5번 sched
+	
+	if (tid == 1) {
+        	int count = post_mycoroutines_to(1,0);
+		break;
+    	}
     }
-
-    if (tid == 1) {
-        int count = post_mycoroutines_to(1,0);
-    }
-
     co_return;
 }
 
