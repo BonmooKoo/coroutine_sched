@@ -1,4 +1,4 @@
-//g++ -std=c++20 -fcoroutines -lpthread sched3.cpp -o sched3
+//g++ -std=c++20 -fcoroutines -lpthread sched4.cpp -o sched4
 
 #include <coroutine>
 #include <iostream>
@@ -38,7 +38,7 @@ struct utask {
 
 //=========== Global Variable ==========
 constexpr int MAX_THREADS = 32;
-std::vector<std::queue<std::coroutine_handle<>>> coroutine_queues(MAX_THREADS);
+std::vector<std::queue<std::coroutine_handle<>>> coroutine_queues(MAX_THREADS); // Queue 배열 coroutine_queues[32]
 std::mutex queue_mutexes[MAX_THREADS];
 
 // ========== Scheduler ==========
@@ -65,9 +65,9 @@ public:
       if (!task.done()) {
         coroutine_queues[thread_id].push(task);
       } else {
-        printf("destroy start\n");
+              //printf("destroy start\n");
 	      task.destroy();
-	      printf("destroy end\n");
+	      //printf("destroy end\n");
       }
     }
   }
@@ -105,10 +105,12 @@ void post_mycoroutines_to(int from_tid, int to_tid) {
 
 utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sched) {
   printf("[Master Coroutine%d] Started on thread %d\n", tid, gettid());
+  //Worker Coroutiune 초기화 과정
   for (int i = 0; i < coro_count; ++i) {
     auto handle = workers[i].get_handle();
     sched.emplace(handle);
   }
+  //Worker Coroutine 실행 과정
   while (1) {
     sched.schedule();
     if (tid == 2) {
@@ -121,6 +123,7 @@ utask master(int tid, int coro_count, std::vector<utask>& workers, Scheduler& sc
 }
 
 void thread_func(int tid, int coro_count) {
+  //초기화 하는 함수
   pthread_t this_thread = pthread_self();
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -136,7 +139,8 @@ void thread_func(int tid, int coro_count) {
     utask t = worker(tid, i, sched);
     tasks.push_back(std::move(t));
   }
-
+  //master을 시작함.
+  //master는 worker coroutine을 초기화하고, 
   utask master_task = master(tid, coro_count, tasks, sched);
   master_task.handle.resume();
   printf("[Thread%d] end\n",tid);
