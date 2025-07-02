@@ -190,9 +190,9 @@ void scheduler_thread(int tid) {//지금은 사용 안함.
 }
 
 int main() {
-  const int coro_count = 3;
+  const int coro_count = 10;
   std::thread t1(thread_func, 1, coro_count);
-  sleep(3);
+  //sleep(3);
   std::thread t2(thread_func, 2, coro_count);
   t1.join();
   t2.join();

@@ -131,7 +131,7 @@ int post_mycoroutines_to(int from_tid, int to_tid) {
 utask worker(int tid, int coroid) {
     std::cout << "[Coroutine " << tid << "-" << coroid << "] started on thread " << gettid() << "\n";
     co_await std::suspend_always{};
-    std::cout << "[Coroutine " << tid << "-" << coroid << "] running on thread " << gettid() << "\n";
+    std::cout << "[Coroutine " << tid << "-" << coroid << "] ended on thread " << gettid() << "\n";
     co_return;
 }
 
@@ -141,8 +141,8 @@ utask master(int tid, int coro_count, std::vector<utask>& workers) {
         sched.emplace(std::move(t));
     while(1){
     	int count = 0;
-    //	while (count++ < 5) 
-        	sched.schedule();//5번 sched
+    while (count++ < 3) 
+        sched.schedule();//3번 sched
 	
 	if (tid == 1) {
         	int count = post_mycoroutines_to(1,0);
@@ -174,18 +174,19 @@ void thread_func(int tid, int coro_count) {
 
     auto master_task = master(tid, coro_count, tasks);
     master_task.get_handle().resume();
+    printf("ended\n");
 }
 
 // ===== Main =====
 int main() {
-    const int coro_count = 3;
+    const int coro_count = 10;
 
     std::thread t0(thread_func, 0, coro_count);
-    sleep(1);
+    //sleep(1);
     std::thread t1(thread_func, 1, coro_count);
 
-    t0.join();
     t1.join();
+    t0.join();
     return 0;
 }
 
