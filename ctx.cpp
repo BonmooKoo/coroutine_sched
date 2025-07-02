@@ -1,4 +1,6 @@
-#include <coroutine>
+//g++ -O2 ctx.cpp -o ctx   -I./ -I/usr/local/include   -L/usr/local/lib -Wl,-rpath,/usr/local/lib   -lboost_coroutine -lboost_context -lboost_system   -libverbs -lmemcached -lpthread
+
+#include <boost/coroutine/symmetric_coroutine.hpp>
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
@@ -7,7 +9,7 @@
 #include <array>
 #include <chrono>
 
-static constexpr int N = 5;               // 스레드/코루틴 개수
+static constexpr int N = 20;               // 스레드/코루틴 개수
 static constexpr int SWITCHES = 1'000'000; // 스위칭 횟수
 
 void bind_cpu(int cpu_id = 0) {
@@ -50,96 +52,60 @@ void bench_threads() {
     for (auto &t : threads) t.join();
     auto t1 = std::chrono::high_resolution_clock::now();
 
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    auto ms = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
     std::cout << "[Threads] Context switches: " << SWITCHES * N
-              << ", time = " << ms << " ms\n";
+              << ", time = " << ms << " ns\n";
 }
 
 // ========== Coroutine 벤치마크 ==========
-struct utask {
-    struct promise_type;
-    using handle_type = std::coroutine_handle<promise_type>;
-
-    handle_type handle;
-    int utask_id;
-    int thread_id;  // 소유한 thread ID
-     
-    utask(handle_type h, int tid) : handle(h), thread_id(tid) {}
-    utask(const utask&) = delete;
-    utask& operator=(const utask&) = delete;
-
-    utask(utask&& other) noexcept
-        : handle(other.handle), utask_id(other.utask_id), thread_id(other.thread_id) {
-        other.handle = nullptr;
-    }
-
-    ~utask() {
-        if (handle)
-            handle.destroy();
-    }
-
-    handle_type get_handle() { return handle; }
-    struct promise_type {
-        int thread_id;
-
-        auto get_return_object() {
-            return utask{handle_type::from_promise(*this), thread_id};
-        }
-
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
-        void return_void() {}
-        void unhandled_exception() { std::terminate(); }
-    };
-};
-static std::array<utask::handle_type, N> co_handles;
-static std::vector<utask> tasks;
+using coro_t    = boost::coroutines::symmetric_coroutine<void>;
+using CoroCall  = coro_t::call_type;
+using CoroYield = coro_t::yield_type;
+using namespace std::placeholders;
+CoroCall master;
+CoroCall workers[N];
 int arr[N];
-utask coroutine_worker(int id) {
-     printf("worker Start %d\n",id);
+static void coroutine_worker(CoroYield &yield,int coro_id)
+{
+     printf("worker Start %d\n",coro_id);
      int i;
      for (i=0; i <SWITCHES; i++) {
         // 다음 코루틴 재개
-        int nxt = (id+1) % (N);
+        int nxt = (coro_id+1) % (N);
         //if(i%10000==0) 
-	printf("[ID:%d]%d\n",id,i);
+	//printf("[ID:%d]%d\n",coro_id,i);
 	//co_handles[nxt].resume();
         while(arr[nxt]==1){
-		printf("it is 1\n");
+//		printf("it is 1\n");
 		nxt = (nxt+1) % N;
-		if (nxt == id) break;	
+		if (nxt == coro_id) break;	
 	}
-	tasks[nxt].get_handle().resume();
-	// 자신은 여기서 일시 중단
-        co_await std::suspend_always{};
-        if(i%10000==0) printf("[ID:%d]%d end\n",id,i);
+        yield(workers[nxt]);
+        //if(i%10000==0) printf("[ID:%d]%d end\n",coro_id,i);
     }
-     arr[id]=1;
+     arr[coro_id]=1;
      //지금 끝난 코루틴을 어떻게 처리할지? 
-     co_return;
 }
 void bench_coroutines() {
     bind_cpu(0);
-    tasks.reserve(N);
-	// i코루틴 5개 생성만, 실행은 전부 대기 상태(initial_suspend)
+	// 코루틴 5개 생성만, 실행은 전부 대기 상태(initial_suspend)
     for (int i = 0; i < N; i++) {
-        printf("%d\n",i);
-	auto task=coroutine_worker(i);
-	tasks.push_back(std::move(task));
-    	//co_handles[i]=tasks.back().get_handle();
+    	workers[i]=CoroCall(std::bind(&coroutine_worker,_1,i));
     }
+    master = CoroCall([&](CoroYield &yield) {
+    	yield(workers[0]);  // workers[0]을 첫 번째로 실행
+    });
     printf("resume\n");
     // 벤치 시작
     //while(1); 
     auto t0 = std::chrono::high_resolution_clock::now();
     // 첫 번째 코루틴만 resume -> 순환 시작
-    tasks[0].get_handle().resume();
-    printf("end\n");
+    master();
     auto t1 = std::chrono::high_resolution_clock::now();
 
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    auto ms = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
     std::cout << "[Coroutines] Context switches: " << SWITCHES * N
-              << ", time = " << ms << " ms\n";
+              << ", time = " << ms << " ns\n";
 }
 
 int main() {
